@@ -1,18 +1,15 @@
-#include <Arduino.h>
-#include <driver/gpio.h>
-
 
 // ------------ Pins ------------
 
 inline constexpr int kPhotoresistorPin = 34;
-inline constexpr int kButtonPin = 2;
+inline constexpr int kButtonPin = 14;
 inline constexpr int kLedPin = 18;
 inline constexpr int kSpeakerPin = 19;
 
 
 // ------------ Other Constants ------------
 
-inline constexpr int kLightThreshold = 2000;
+inline constexpr int kLightThreshold = 2800;
 inline constexpr int kDelayBetweenIntervals = 5000;
 inline constexpr int kDelayBetweenChecks = 500;
 inline constexpr int kAlarmFrequency = 2048;
@@ -23,10 +20,11 @@ enum class State {
   kAlarmSounding,
   kWaitingForLight,
   kWaitingForDark
-};
+} state;
 
+unsigned long last_significant;
 
-extern "C" void app_main(void) {
+void setup(void) {
   initArduino();
 
   pinMode(kPhotoresistorPin, INPUT);
@@ -37,44 +35,68 @@ extern "C" void app_main(void) {
   noTone(kSpeakerPin);
   digitalWrite(kLedPin, LOW);
 
-  State state = State::kWaitingForDark;
-  unsigned long last_significant = millis();
-  for (;; delay(kDelayBetweenChecks)) {
+  // Initialize the global variables
+  state = State::kWaitingForDark;
+  last_significant = millis();
 
-    if (state == State::kAlarmSounding) {
+  
+  Serial.begin(115200);
+}
 
-      if (digitalRead(kButtonPin) == LOW) {
-        // Turn off the alarm
-        state = State::kWaitingForLight;
-        digitalWrite(kLedPin, LOW);
-        noTone(kSpeakerPin);
-        
-      }
 
-    } else if (state == State::kWaitingForLight) {
+class DelayOnDestroy {
+public:
+  ~DelayOnDestroy() {
+    delay(kDelayBetweenChecks);
+  }
+};
 
-      if (millis() - last_significant < kDelayBetweenIntervals) {
-        continue;
-      }
+void loop(void) {
 
-      if (analogRead(kPhotoresistorPin) < kLightThreshold) {
-        state = State::kWaitingForDark;
-        last_significant = millis();
-      }
+  // So I can just use return to go to the next loop iteration while still getting delay
+  DelayOnDestroy d;
 
-    } else { // State == State::kWaitingForDark
+  if (state == State::kAlarmSounding) {
 
-      if (millis() - last_significant < kDelayBetweenIntervals) {
-        continue;
-      }
-
-      if (analogRead(kPhotoresistorPin) > kLightThreshold) {
-        state = State::kAlarmSounding;
-        tone(kSpeakerPin, kAlarmFrequency);
-        digitalWrite(kLedPin, HIGH);
-        last_significant = millis();
-      }
-
+    if (digitalRead(kButtonPin) == LOW) {
+      // Turn off the alarm
+      Serial.println("Transistioning to waiting for light");
+      state = State::kWaitingForLight;
+      digitalWrite(kLedPin, LOW); 
+      noTone(kSpeakerPin);
+      
     }
+
+  } else if (state == State::kWaitingForLight) {
+
+    if (millis() - last_significant < kDelayBetweenIntervals) {
+      Serial.println("Waiting for light, but were in the timeout interval");
+      return;
+    }
+    int light_value = analogRead(kPhotoresistorPin);
+    Serial.printf("Photoresistor value: %d.\n", light_value);
+    if (light_value > kLightThreshold) {
+      state = State::kWaitingForDark;
+      Serial.println("Transistioning to waiting for dark");
+      last_significant = millis();
+    }
+
+  } else { // State == State::kWaitingForDark
+
+    if (millis() - last_significant < kDelayBetweenIntervals) {
+      Serial.println("Waiting for dark, but were in the timeout interval");
+      return;
+    }
+
+    int light_value = analogRead(kPhotoresistorPin);
+    Serial.printf("Photoresistor value: %d.\n", light_value);
+    if (light_value < kLightThreshold) {
+      Serial.println("Transistioning to alarm sounding");
+      state = State::kAlarmSounding;
+      tone(kSpeakerPin, kAlarmFrequency);
+      digitalWrite(kLedPin, HIGH);
+      last_significant = millis();
+    }
+
   }
 }
