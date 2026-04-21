@@ -1,3 +1,11 @@
+/// @file SunTrigger.ino
+/// @author Jacob Myers
+/// SunTrigger is an alarm clock based off of the sun.
+/// The alarm will sound when the light reaches below a certain level, and will stop being sound when a button is pressed.
+/// Once the button is pressed, a small delay is set to prevent going back and fourth between
+/// states, and the same happens when the light level reaches the threshold again going up.
+///
+/// The delay and other settings can be modifed under Other Constants
 
 // ------------ Pins ------------
 
@@ -15,6 +23,7 @@ inline constexpr int kDelayBetweenChecks = 500;
 inline constexpr int kAlarmFrequency = 2048;
 
 
+// ------------ Globals ------------
 
 enum class State {
   kAlarmSounding,
@@ -25,13 +34,13 @@ enum class State {
 unsigned long last_significant;
 
 void setup(void) {
-  initArduino();
-
+  // Pin modes
   pinMode(kPhotoresistorPin, INPUT);
   pinMode(kButtonPin, INPUT_PULLUP);
   pinMode(kLedPin, OUTPUT);
   pinMode(kSpeakerPin, OUTPUT);
 
+  // Initial pin values
   noTone(kSpeakerPin);
   digitalWrite(kLedPin, LOW);
 
